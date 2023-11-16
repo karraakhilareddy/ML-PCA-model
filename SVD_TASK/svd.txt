@@ -1,0 +1,116 @@
+import pandas as pd
+data = pd.read_csv(r"D:/assignments/Data_Science/SVD_TASK/AutoInsurance.csv")
+d=data.info()
+#---------------------------------------------------------------------------------------
+from sqlalchemy import create_engine
+
+user='root1'
+pw='Reddy2000'
+db='ml'
+engine = create_engine(f"mysql+pymysql://{user}:{pw}@localhost/{db}")
+data.to_sql('svd',con=engine,chunksize=1000,index=False,if_exists='replace')
+sql='select * from svd;'
+df=pd.read_sql_query(sql,engine)
+#---------------------------------------------------------------------------------
+numerical = df.select_dtypes(include=['number'])
+#----------------Auto_EDA----------------------------------------------------------
+import sweetviz 
+my_report = sweetviz.analyze([numerical,'numerical'])
+my_report.show_html('Report.html')
+
+#--------dropping duplicates---------------------------------------------------------
+numerical.isna().sum()
+numerical1 = numerical.drop_duplicates()
+correlation=numerical1 .corr()
+
+#------- identifying outliers-----------------------------------------------------
+import matplotlib.pyplot as plt
+df.plot(kind='box',subplots=True,sharey=False,figsize=(15,6))
+plt.subplots_adjust(wspace=0.75)
+plt.show()
+#-------------remove outliers----------------------------------------------------
+from feature_engine.outliers import Winsorizer
+from sklearn.pipeline import Pipeline
+import joblib
+winsor = Winsorizer(capping_method = 'quantiles', # choose  IQR rule boundaries or gaussian for mean and std
+                          tail = 'both', # cap left, right or both tails 
+                          fold = 0.20,
+                          variables = ['Customer Lifetime Value','Monthly Premium Auto','Number of Open Complaints','Number of Policies',
+                          'Total Claim Amount'])
+
+outlier_pipeline = Pipeline(steps = [('winsor', winsor)])
+
+winz_data = outlier_pipeline.fit(numerical1)
+joblib.dump(winz_data, 'processed1')
+import os
+os.getcwd()
+
+# Import the pipeline
+model = joblib.load("processed1")
+X2 = pd.DataFrame(model.transform(numerical1), columns = numerical1.columns)
+
+X2.plot(kind = 'box', subplots = True, sharey = False, figsize = (15, 8)) 
+plt.subplots_adjust(wspace = 0.75) # ws is the width of the padding between subplots, as a fraction of the average Axes width.
+plt.show()
+#-----------------------PCA and min&max scaler----------------------------------------------------
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.pipeline import make_pipeline
+import numpy as np
+from kneed import KneeLocator
+
+pca = PCA(n_components = 8)
+
+output_pipeline = make_pipeline(StandardScaler(), pca)
+processed = output_pipeline.fit(X2) 
+joblib.dump(processed,'processed2')
+import os
+os.getcwd()
+
+# Import the pipeline
+model1 = joblib.load("processed2")
+final_data = pd.DataFrame(model1.transform(X2))
+
+model1['pca'].components_
+# Take a closer look at the components
+
+components = pd.DataFrame(model1['pca'].components_.T, 
+columns=['pc0', 'pc1', 'pc2', 'pc3', 'pc4', 'pc5', 'pc6', 'pc7'])
+
+print(model1['pca'].explained_variance_ratio_)
+var1 = np.cumsum(model1['pca'].explained_variance_ratio_)
+
+print(var1)
+
+# Variance plot for PCA components obtained 
+plt.plot(var1, color = "red")
+
+kl = KneeLocator(range(len(var1)), var1, curve = 'concave', direction = "increasing") 
+# The line is pretty linear hence Kneelocator is not able to detect the knee/elbow appropriately
+kl.elbow
+plt.style.use("seaborn")
+plt.plot(range(len(var1)), var1)
+plt.xticks(range(len(var1)))
+plt.ylabel("variance")
+plt.axvline(x = kl.elbow, color = 'r', label = 'axvline - full height', ls = '--')
+plt.show()
+
+final = pd.concat([final_data.iloc[:, 0:6]], axis = 1)
+final.columns = ['pc0', 'pc1', 'pc2','pc3','pc4','pc5']
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
